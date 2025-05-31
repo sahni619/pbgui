@@ -120,7 +120,10 @@ class PBMon():
             await self.bot_application.initialize()
             await self.bot_application.start()
             await self.bot_application.updater.start_polling()
-            await self.bot_application.updater.wait()
+            if hasattr(self.bot_application.updater, "wait"):
+                await self.bot_application.updater.wait()
+            else:
+                await self.bot_application.updater.wait_closed()
         finally:
             await self.bot_application.stop()
             await self.bot_application.shutdown()
