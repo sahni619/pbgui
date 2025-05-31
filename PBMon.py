@@ -116,7 +116,14 @@ class PBMon():
         self.bot_application.add_handler(CommandHandler("normal", self.cmd_normal))
         self.bot_application.add_handler(CommandHandler("graceful_stop", self.cmd_graceful))
         self.bot_application.add_handler(CommandHandler("help", self.cmd_help))
-        await self.bot_application.run_polling(close_loop=False)
+        try:
+            await self.bot_application.initialize()
+            await self.bot_application.start()
+            await self.bot_application.updater.start_polling()
+            await self.bot_application.updater.wait_closed()
+        finally:
+            await self.bot_application.stop()
+            await self.bot_application.shutdown()
 
     def set_instance_mode(self, instance_name: str, long_mode: str, short_mode: str):
         p = Path(f"{PBGDIR}/data/instances/{instance_name}/instance.cfg")
