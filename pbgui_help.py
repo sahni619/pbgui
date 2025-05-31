@@ -1302,6 +1302,14 @@ pbmon_telegram_chat_id = """
     Your Telegram Chat ID
     ```"""
 
+pbmon_telegram_bot = """
+    PBMon listens for Telegram commands for risk management.
+    Available commands:
+    `/panic <user> <symbol> <market>` - set panic mode
+    `/graceful_stop <user> <symbol> <market>` - set graceful_stop mode
+    `/normal <user> <symbol> <market>` - set normal mode
+    ```"""
+
 archive_name = """
     ```
     Name of the archive

@@ -21,6 +21,7 @@ It has the following functions:
 - A dashboard for viewing trading performance.
 - An interface to CoinMarketCap for selecting and filtering coins.
 - Installing and updating your VPS with just a few clicks.
+- Telegram commands to change instance modes (panic, graceful stop, normal).
 - And much more to easily manage Passivbot.
 
 ### Requirements
@@ -216,6 +217,7 @@ Add start.bat to Windows Task Scheduler and use Trigger "At system startup"
 - Using fragments for speedup GUI
 - Support for GateIO
 - Send Telegram Messages on Bot errors
+- Telegram commands for risk management
 - logarithmic view of backtests
 - TWE and WE view on backtests v7
 - Update to streamlit v1.44

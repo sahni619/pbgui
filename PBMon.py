@@ -10,8 +10,10 @@ from io import TextIOWrapper
 from datetime import datetime
 import platform
 import traceback
+import json
 from pbgui_func import PBGDIR
-from telegram import Bot
+from telegram import Bot, Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from PBRemote import PBRemote
 import re
 from pbgui_purefunc import load_ini, save_ini
@@ -29,6 +31,7 @@ class PBMon():
         self.pbremote = PBRemote()
         self._telegram_token = ""
         self._telegram_chat_id = ""
+        self.bot_application = None
         
     @property
     def telegram_token(self):
@@ -105,6 +108,63 @@ class PBMon():
         async with bot:
             await bot.send_message(chat_id=self.telegram_chat_id, text=message, parse_mode='Markdown')
 
+    async def telegram_bot(self):
+        if not self.telegram_token:
+            return
+        self.bot_application = ApplicationBuilder().token(self.telegram_token).build()
+        self.bot_application.add_handler(CommandHandler("panic", self.cmd_panic))
+        self.bot_application.add_handler(CommandHandler("normal", self.cmd_normal))
+        self.bot_application.add_handler(CommandHandler("graceful_stop", self.cmd_graceful))
+        self.bot_application.add_handler(CommandHandler("help", self.cmd_help))
+        await self.bot_application.run_polling()
+
+    def set_instance_mode(self, instance_name: str, long_mode: str, short_mode: str):
+        p = Path(f"{PBGDIR}/data/instances/{instance_name}/instance.cfg")
+        if not p.exists():
+            return False
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            cfg["_long_mode"] = long_mode
+            cfg["_short_mode"] = short_mode
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=4)
+            self.pbremote.local_run.activate(instance_name, False)
+            return True
+        except Exception as e:
+            print(f"Failed to update instance {instance_name}: {e}")
+            traceback.print_exc()
+        return False
+
+    async def cmd_mode(self, update: Update, context: ContextTypes.DEFAULT_TYPE, long_mode: str, short_mode: str):
+        args = context.args
+        if len(args) != 3:
+            await update.message.reply_text("Usage: /<cmd> <user> <symbol> <market>")
+            return
+        instance = f"{args[0]}_{args[1]}_{args[2]}"
+        if self.set_instance_mode(instance, long_mode, short_mode):
+            await update.message.reply_text(f"{instance} set to {long_mode}")
+        else:
+            await update.message.reply_text(f"Instance {instance} not found")
+
+    async def cmd_panic(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cmd_mode(update, context, "panic", "panic")
+
+    async def cmd_graceful(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cmd_mode(update, context, "graceful_stop", "graceful_stop")
+
+    async def cmd_normal(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cmd_mode(update, context, "normal", "normal")
+
+    async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        msg = (
+            "Commands:\n"
+            "/panic <user> <symbol> <market> - set panic mode\n"
+            "/graceful_stop <user> <symbol> <market> - set graceful_stop mode\n"
+            "/normal <user> <symbol> <market> - set normal mode"
+        )
+        await update.message.reply_text(msg)
+
     async def has_errors(self):
         self.pbremote.update_remote_servers()
         errors = self.pbremote.has_error()
@@ -134,6 +194,26 @@ class PBMon():
             if msg:
                 print(f'{datetime.now().isoformat(sep=" ", timespec="seconds")} Send Message:\n{msg}')
                 await self.send_telegram_message(msg)
+
+    async def monitor_loop(self, logfile: Path):
+        while True:
+            try:
+                if logfile.exists() and logfile.stat().st_size >= 10485760:
+                    logfile.replace(f"{str(logfile)}.old")
+                    sys.stdout = TextIOWrapper(open(logfile, "ab", 0), write_through=True)
+                    sys.stderr = TextIOWrapper(open(logfile, "ab", 0), write_through=True)
+                if self.telegram_token and self.telegram_chat_id:
+                    await self.has_errors()
+                await asyncio.sleep(60)
+            except Exception as e:
+                print(f'Something went wrong, but continue {e}')
+                traceback.print_exc()
+
+    async def run_async(self, logfile: Path):
+        tasks = [asyncio.create_task(self.monitor_loop(logfile))]
+        if self.telegram_token and self.telegram_chat_id:
+            tasks.append(asyncio.create_task(self.telegram_bot()))
+        await asyncio.gather(*tasks)
    
 
 def main():
@@ -151,19 +231,10 @@ def main():
         print(f'{datetime.now().isoformat(sep=" ", timespec="seconds")} Error: PBMon already started')
         exit(1)
     pbmon.save_pid()
-    while True:
-        try:
-            if logfile.exists():
-                if logfile.stat().st_size >= 10485760:
-                    logfile.replace(f'{str(logfile)}.old')
-                    sys.stdout = TextIOWrapper(open(logfile,"ab",0), write_through=True)
-                    sys.stderr = TextIOWrapper(open(logfile,"ab",0), write_through=True)
-            if pbmon.telegram_token and pbmon.telegram_chat_id:
-                asyncio.run(pbmon.has_errors())
-            sleep(60)
-        except Exception as e:
-            print(f'Something went wrong, but continue {e}')
-            traceback.print_exc()
+    try:
+        asyncio.run(pbmon.run_async(logfile))
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == '__main__':
     main()
